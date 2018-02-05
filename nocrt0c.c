@@ -2,7 +2,7 @@
  * Proj: nocrt0
  * File: nocrt0c.c
  * Auth: MatveyT
- * Date: 11.01.2018
+ * Date: 05.02.2018
  * Desc: nostdlib entry point for console application (mainCRTStartup)
  * Note: Tested with GCC/MinGW-w64, Pelles C
  */
@@ -69,19 +69,23 @@ extern int wmain(void);
 #else
 extern int main(int,char**,char**);
 extern int wmain(int,wchar_t**,wchar_t**);
-#endif // ARGV_type
+#endif // ARGV_none
 
 
 #ifdef _UNICODE
 #define GetCommandLine GetCommandLineW
 #define _tgetmainargs __wgetmainargs
-//#define _tmain wmain // defined in <tchar.h>
 #define _tmainCRTStartup wmainCRTStartup
+#ifndef _tmain
+#define _tmain wmain
+#endif // _tmain
 #else
 #define GetCommandLine GetCommandLineA
 #define _tgetmainargs __getmainargs
-//#define _tmain main // defined in <tchar.h>
 #define _tmainCRTStartup mainCRTStartup
+#ifndef _tmain
+#define _tmain main
+#endif // _tmain
 #endif // _UNICODE
 
 
