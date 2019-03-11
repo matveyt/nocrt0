@@ -1,8 +1,6 @@
 /*
  * Proj: nocrt0
- * File: nocrt0w.c
- * Auth: MatveyT
- * Date: 11.01.2018
+ * Auth: matveyt
  * Desc: nostdlib entry point for GUI application (WinMainCRTStartup)
  * Note: Tested with GCC/MinGW-w64, Pelles C
  */
