@@ -9,16 +9,18 @@
 /** Build instructions:
 
     -D_UNICODE = compiles 'unicode' version instead of 'ansi'
-    -DARGV={own | msvcrt | none} = selects underlying argv[] implementation:
+    -DNODEFAULTLIBS = also compiles own implementation of _alloca and __chkstk
+    -DARGV={own | msvcrt | shell32 | none} = selects underlying argv[] implementation:
         - own = built-in implementation (default)
         - msvcrt = import from msvcrt.dll
+        - shell32 = import from shell32.dll (-D_UNICODE only)
         - none = intended for 'int main(void)' only, UB otherwise
 
 **/
 
 
 #if __STDC_VERSION__ < 199901L && !defined(__POCC__)
-#error C99 compiler required
+#error C99 compiler required.
 #endif
 
 
@@ -27,9 +29,10 @@
 
 
 // how to implement argv[]
-#define ARGV_own    0   // own implementation (default)
-#define ARGV_msvcrt 1   // __getmainargs() from msvcrt.dll
-#define ARGV_none   2   // no argv[] (non-standard, may cause UB!)
+#define ARGV_own        0   // own implementation (default)
+#define ARGV_msvcrt     1   // __getmainargs() from msvcrt.dll
+#define ARGV_shell32    2   // CommandLineToArgvW() from shell32.dll
+#define ARGV_none       3   // no argv[] (non-standard, may cause UB!)
 
 #ifndef ARGV
 #define ARGV_type ARGV_own
@@ -48,12 +51,13 @@
 extern void __declspec(noreturn) __stdcall ExitProcess(unsigned long);
 extern char* __stdcall GetCommandLineA(void);
 extern wchar_t* __stdcall GetCommandLineW(void);
+extern wchar_t** __stdcall CommandLineToArgvW(const wchar_t*, int*);
 
 
 #if (ARGV_type == ARGV_msvcrt)
 typedef struct { int newmode; } _startupinfo;
-extern void __getmainargs(int*,char***,char***,int,_startupinfo*);
-extern void __wgetmainargs(int*,wchar_t***,wchar_t***,int,_startupinfo*);
+extern void __getmainargs(int*, char***, char***, int, _startupinfo*);
+extern void __wgetmainargs(int*, wchar_t***, wchar_t***, int, _startupinfo*);
 extern void __set_app_type(int);
 #ifndef __GNUC__
 #pragma comment(lib, "msvcrt.lib")
@@ -65,15 +69,20 @@ extern void __set_app_type(int);
 extern int main(void);
 extern int wmain(void);
 #else
-extern int main(int,char**,char**);
-extern int wmain(int,wchar_t**,wchar_t**);
+extern int main(int, char**, char**);
+extern int wmain(int, wchar_t**, wchar_t**);
 #endif // ARGV_none
 
 
 #ifdef _UNICODE
 #define GetCommandLine GetCommandLineW
+#define CommandLineToArgv CommandLineToArgvW
 #define _tgetmainargs __wgetmainargs
+#ifdef __GNUC__
+#define _tmainCRTStartup mainCRTStartup
+#else
 #define _tmainCRTStartup wmainCRTStartup
+#endif // __GNUC__
 #ifndef _tmain
 #define _tmain wmain
 #endif // _tmain
@@ -87,15 +96,12 @@ extern int wmain(int,wchar_t**,wchar_t**);
 #endif // _UNICODE
 
 
+#ifdef NODEFAULTLIBS
 #ifdef __GNUC__
-// needed to keep GCC happy
-void __main(void) {}
-
-// this is a reference implementation of __alloca() and friends;
-// comment it out if you prefer to link with libgcc.a (-lgcc)
-#if 1 && defined(__amd64__)
+// reference implementation of _alloca() etc.
+#if defined(__amd64__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
     "___chkstk_ms:pushq %rcx\n"
     "pushq %rax\n"
     "cmpq $0x1000, %rax\n"
@@ -126,11 +132,11 @@ __asm__(
     "movq %rsp, %rax\n"
     "movq %r10, %rsp\n"
     "pushq %r11\n"
-    "ret\n"
+    "___main:ret\n"
 );
-#elif 1 && defined(__i386__)
+#elif defined(__i386__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
     "___chkstk_ms:pushl %ecx\n"
     "pushl %eax\n"
     "cmpl $0x1000, %eax\n"
@@ -162,10 +168,11 @@ __asm__(
     "movl %ecx, %esp\n"
     "movl (%eax), %ecx\n"
     "pushl 4(%eax)\n"
-    "ret\n"
+    "___main:ret\n"
 );
 #endif
 #endif // __GNUC__
+#endif // NODEFAULTLIBS
 
 
 #if (ARGV_type == ARGV_own)
@@ -233,11 +240,7 @@ static void parse_args(const _TCHAR* pszCmdLine, ARGS* pArgs)
 
 
 __declspec(noreturn)
-#ifdef __GNUC__
-void mainCRTStartup(void)
-#else
 void _tmainCRTStartup(void)
-#endif // __GNUC__
 {
 #if (ARGV_type == ARGV_own)
     // get command line
@@ -264,16 +267,28 @@ void _tmainCRTStartup(void)
     args.argv[args.argc] = NULL;
 
     // invoke main and exit
-    ExitProcess(_tmain(args.argc, args.argv, &(_TCHAR*) { NULL }));
+    ExitProcess(_tmain(args.argc, args.argv, &(_TCHAR*){NULL}));
+
 #elif (ARGV_type == ARGV_msvcrt)
     int argc;
     _TCHAR** argv;
     _TCHAR** envp;
+
     __set_app_type(1); // _CONSOLE_APP
-    _tgetmainargs(&argc, &argv, &envp, 0, &(_startupinfo) { 0 });
+    _tgetmainargs(&argc, &argv, &envp, 0, &(_startupinfo){0});
     ExitProcess(_tmain(argc, argv, envp));
+
+#elif (ARGV_type == ARGV_shell32)
+#ifndef _UNICODE
+#error -DARGV=shell32 requires -D_UNICODE.
+#endif // _UNICODE
+    int argc;
+    _TCHAR** argv = CommandLineToArgv(GetCommandLine(), &argc);
+    ExitProcess(_tmain(argc, argv, &(_TCHAR*){NULL}));
+
 #elif (ARGV_type == ARGV_none)
     ExitProcess(_tmain());
+
 #else
 #error Unknown ARGV_type.
 #endif // ARGV_type

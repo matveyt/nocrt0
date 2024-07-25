@@ -9,6 +9,7 @@
 /** Build instructions:
 
     -D_UNICODE = compiles 'unicode' version instead of 'ansi'
+    -DNODEFAULTLIBS = also compiles own implementation of _alloca and __chkstk
 
 **/
 
@@ -24,16 +25,29 @@ extern char* __stdcall GetCommandLineA(void);
 extern wchar_t* __stdcall GetCommandLineW(void);
 extern void* __stdcall GetModuleHandleA(char*);
 extern void* __stdcall GetModuleHandleW(wchar_t*);
-extern int __stdcall WinMain(void*,void*,char*,int);
-extern int __stdcall wWinMain(void*,void*,wchar_t*,int);
+extern int __stdcall WinMain(void*, void*, char*, int);
+extern int __stdcall wWinMain(void*, void*, wchar_t*, int);
 
 
+#ifdef _UNICODE
+#define GetCommandLine GetCommandLineW
+#define GetModuleHandle GetModuleHandleW
+#define _tWinMainCRTStartup wWinMainCRTStartup
+#define _tWinMain wWinMain
+#else
+#define GetCommandLine GetCommandLineA
+#define GetModuleHandle GetModuleHandleA
+#define _tWinMainCRTStartup WinMainCRTStartup
+#define _tWinMain WinMain
+#endif // _UNICODE
+
+
+#ifdef NODEFAULTLIBS
 #ifdef __GNUC__
-// this is a reference implementation of __alloca() and friends;
-// comment it out if you prefer to link with libgcc.a (-lgcc)
-#if 1 && defined(__amd64__)
+// reference implementation of _alloca() etc.
+#if defined(__amd64__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
     "___chkstk_ms:pushq %rcx\n"
     "pushq %rax\n"
     "cmpq $0x1000, %rax\n"
@@ -64,11 +78,11 @@ __asm__(
     "movq %rsp, %rax\n"
     "movq %r10, %rsp\n"
     "pushq %r11\n"
-    "ret\n"
+    "___main:ret\n"
 );
-#elif 1 && defined(__i386__)
+#elif defined(__i386__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
     "___chkstk_ms:pushl %ecx\n"
     "pushl %eax\n"
     "cmpl $0x1000, %eax\n"
@@ -100,23 +114,16 @@ __asm__(
     "movl %ecx, %esp\n"
     "movl (%eax), %ecx\n"
     "pushl 4(%eax)\n"
-    "ret\n"
+    "___main:ret\n"
 );
 #endif
 #endif // __GNUC__
+#endif // NODEFAULTLIBS
 
 
 __declspec(noreturn)
-#ifdef _UNICODE
-void wWinMainCRTStartup(void)
+void _tWinMainCRTStartup(void)
 {
-    ExitProcess(wWinMain(GetModuleHandleW(NULL), NULL, GetCommandLineW(),
+    ExitProcess(_tWinMain(GetModuleHandle(NULL), NULL, GetCommandLine(),
         1 /*SW_SHOWNORMAL*/));
 }
-#else
-void WinMainCRTStartup(void)
-{
-    ExitProcess(WinMain(GetModuleHandleA(NULL), NULL, GetCommandLineA(),
-        1 /*SW_SHOWNORMAL*/));
-}
-#endif // _UNICODE
