@@ -1,53 +1,72 @@
 /*
  * Proj: nocrt0
  * Auth: matveyt
- * Desc: nostdlib entry point for GUI application (WinMainCRTStartup)
- * Note: Tested with GCC/MinGW-w64, Pelles C
+ * Desc: C entry point for GUI application (WinMainCRTStartup)
+ * Note: Tested with GCC/MinGW, Pelles C
  */
 
 
 /** Build instructions:
 
     -D_UNICODE = compiles 'unicode' version instead of 'ansi'
-    -DNODEFAULTLIBS = also compiles own implementation of _alloca and __chkstk
+    -DNOSTDLIB = also compiles internal implementation of _alloca and __chkstk
 
 **/
 
 
+#if __STDC_VERSION__ < 199901L && !defined(__POCC__)
+#error C99 compiler required.
+#endif
+
+#if defined(UNICODE) && !defined(_UNICODE)
+#define _UNICODE
+#endif // UNICODE
+
 #include <stddef.h>
+#include <tchar.h>
 
 
 //
 // external function prototypes
 //
-extern void __declspec(noreturn) __stdcall ExitProcess(unsigned long);
-extern char* __stdcall GetCommandLineA(void);
-extern wchar_t* __stdcall GetCommandLineW(void);
-extern void* __stdcall GetModuleHandleA(char*);
-extern void* __stdcall GetModuleHandleW(wchar_t*);
 extern int __stdcall WinMain(void*, void*, char*, int);
 extern int __stdcall wWinMain(void*, void*, wchar_t*, int);
+__declspec(dllimport) __declspec(noreturn) void __stdcall ExitProcess(unsigned);
+__declspec(dllimport) char* __stdcall GetCommandLineA(void);
+__declspec(dllimport) wchar_t* __stdcall GetCommandLineW(void);
+__declspec(dllimport) void* __stdcall GetModuleHandleA(char*);
+__declspec(dllimport) void* __stdcall GetModuleHandleW(wchar_t*);
 
-
-#ifdef _UNICODE
-#define GetCommandLine GetCommandLineW
-#define GetModuleHandle GetModuleHandleW
-#define _tWinMainCRTStartup wWinMainCRTStartup
-#define _tWinMain wWinMain
+#if defined(_UNICODE)
+#define MANGLE_w(name) w##name
+#define MANGLE_uuw(name) __##w##name
+#define MANGLE_AW(name) name##W
 #else
-#define GetCommandLine GetCommandLineA
-#define GetModuleHandle GetModuleHandleA
-#define _tWinMainCRTStartup WinMainCRTStartup
-#define _tWinMain WinMain
+#define MANGLE_w(name) name
+#define MANGLE_uuw(name) __##name
+#define MANGLE_AW(name) name##A
 #endif // _UNICODE
 
+#if !defined(_tWinMainCRTStartup)
+#define _tWinMainCRTStartup MANGLE_w(WinMainCRTStartup)
+#endif // _tWinMainCRTStartup
+#if !defined(_tWinMain)
+#define _tWinMain MANGLE_w(WinMain)
+#endif // _tWinMain
+#if !defined(GetCommandLine)
+#define GetCommandLine MANGLE_AW(GetCommandLine)
+#endif // GetCommandLine
+#if !defined(GetModuleHandle)
+#define GetModuleHandle MANGLE_AW(GetModuleHandle)
+#endif // GetModuleHandle
 
-#ifdef NODEFAULTLIBS
-#ifdef __GNUC__
+
+#if defined(NOSTDLIB)
+#if defined(__GNUC__)
 // reference implementation of _alloca() etc.
 #if defined(__amd64__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk\n"
     "___chkstk_ms:pushq %rcx\n"
     "pushq %rax\n"
     "cmpq $0x1000, %rax\n"
@@ -78,11 +97,11 @@ __asm__(
     "movq %rsp, %rax\n"
     "movq %r10, %rsp\n"
     "pushq %r11\n"
-    "___main:ret\n"
+    "ret\n"
 );
 #elif defined(__i386__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk\n"
     "___chkstk_ms:pushl %ecx\n"
     "pushl %eax\n"
     "cmpl $0x1000, %eax\n"
@@ -114,11 +133,11 @@ __asm__(
     "movl %ecx, %esp\n"
     "movl (%eax), %ecx\n"
     "pushl 4(%eax)\n"
-    "___main:ret\n"
+    "ret\n"
 );
 #endif
 #endif // __GNUC__
-#endif // NODEFAULTLIBS
+#endif // NOSTDLIB
 
 
 __declspec(noreturn)
@@ -127,3 +146,8 @@ void _tWinMainCRTStartup(void)
     ExitProcess(_tWinMain(GetModuleHandle(NULL), NULL, GetCommandLine(),
         1 /*SW_SHOWNORMAL*/));
 }
+
+
+#if defined(__GNUC__)
+void __main(void) {}
+#endif // __GNUC__

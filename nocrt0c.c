@@ -1,20 +1,20 @@
 /*
  * Proj: nocrt0
  * Auth: matveyt
- * Desc: nostdlib entry point for console application (mainCRTStartup)
- * Note: Tested with GCC/MinGW-w64, Pelles C
+ * Desc: C entry point for console application (mainCRTStartup)
+ * Note: Tested with GCC/MinGW, Pelles C
  */
 
 
 /** Build instructions:
 
     -D_UNICODE = compiles 'unicode' version instead of 'ansi'
-    -DNODEFAULTLIBS = also compiles own implementation of _alloca and __chkstk
-    -DARGV={own | msvcrt | shell32 | none} = selects underlying argv[] implementation:
-        - own = built-in implementation (default)
+    -DNOSTDLIB = also compiles internal implementation of _alloca and __chkstk
+    -DARGV={builtin | msvcrt | shell32 | none} = selects argv[] implementation:
+        - builtin = internal implementation (default)
         - msvcrt = import from msvcrt.dll
         - shell32 = import from shell32.dll (-D_UNICODE only)
-        - none = intended for 'int main(void)' only, UB otherwise
+        - none = 'int main(void)' only
 
 **/
 
@@ -23,19 +23,22 @@
 #error C99 compiler required.
 #endif
 
+#if defined(UNICODE) && !defined(_UNICODE)
+#define _UNICODE
+#endif // UNICODE
 
 #include <stddef.h>
 #include <tchar.h>
 
 
 // how to implement argv[]
-#define ARGV_own        0   // own implementation (default)
+#define ARGV_builtin    0   // builtin implementation (default)
 #define ARGV_msvcrt     1   // __getmainargs() from msvcrt.dll
 #define ARGV_shell32    2   // CommandLineToArgvW() from shell32.dll
-#define ARGV_none       3   // no argv[] (non-standard, may cause UB!)
+#define ARGV_none       3   // no argv[]
 
 #ifndef ARGV
-#define ARGV_type ARGV_own
+#define ARGV_type ARGV_builtin
 #else
 #ifndef _CONCAT
 #define _CONCAT2(_Token1, _Token2)  _Token1 ## _Token2
@@ -48,60 +51,57 @@
 //
 // external function prototypes
 //
-extern void __declspec(noreturn) __stdcall ExitProcess(unsigned long);
-extern char* __stdcall GetCommandLineA(void);
-extern wchar_t* __stdcall GetCommandLineW(void);
-extern wchar_t** __stdcall CommandLineToArgvW(const wchar_t*, int*);
-
-
-#if (ARGV_type == ARGV_msvcrt)
-typedef struct { int newmode; } _startupinfo;
-extern void __getmainargs(int*, char***, char***, int, _startupinfo*);
-extern void __wgetmainargs(int*, wchar_t***, wchar_t***, int, _startupinfo*);
-extern void __set_app_type(int);
-#ifndef __GNUC__
-#pragma comment(lib, "msvcrt.lib")
-#endif // __GNUC__
-#endif // ARGV_msvcrt
-
-
-#if (ARGV_type == ARGV_none)
-extern int main(void);
-extern int wmain(void);
+#if (ARGV_type != ARGV_none)
+extern int __cdecl main(int, char**);
+extern int __cdecl wmain(int, wchar_t**);
 #else
-extern int main(int, char**, char**);
-extern int wmain(int, wchar_t**, wchar_t**);
+extern int __cdecl main(void);
+extern int __cdecl wmain(void);
 #endif // ARGV_none
+typedef struct { int newmode; } _startupinfo;
+__declspec(dllimport) int __cdecl __getmainargs(int*, char***, char***, int,
+    _startupinfo*);
+__declspec(dllimport) int __cdecl __wgetmainargs(int*, wchar_t***, wchar_t***, int,
+    _startupinfo*);
+__declspec(dllimport) __declspec(noreturn) void __stdcall ExitProcess(unsigned);
+__declspec(dllimport) char* __stdcall GetCommandLineA(void);
+__declspec(dllimport) wchar_t* __stdcall GetCommandLineW(void);
+__declspec(dllimport) wchar_t** __stdcall CommandLineToArgvW(const wchar_t*, int*);
 
-
-#ifdef _UNICODE
-#define GetCommandLine GetCommandLineW
-#define CommandLineToArgv CommandLineToArgvW
-#define _tgetmainargs __wgetmainargs
-#ifdef __GNUC__
-#define _tmainCRTStartup mainCRTStartup
+#if defined(_UNICODE)
+#define MANGLE_w(name) w##name
+#define MANGLE_uuw(name) __##w##name
+#define MANGLE_AW(name) name##W
 #else
-#define _tmainCRTStartup wmainCRTStartup
-#endif // __GNUC__
-#ifndef _tmain
-#define _tmain wmain
-#endif // _tmain
-#else
-#define GetCommandLine GetCommandLineA
-#define _tgetmainargs __getmainargs
-#define _tmainCRTStartup mainCRTStartup
-#ifndef _tmain
-#define _tmain main
-#endif // _tmain
+#define MANGLE_w(name) name
+#define MANGLE_uuw(name) __##name
+#define MANGLE_AW(name) name##A
 #endif // _UNICODE
 
+#if !defined(_tgetmainargs)
+#define _tgetmainargs MANGLE_uuw(getmainargs)
+#endif // _tgetmainargs
+#if !defined(_tmainCRTStartup)
+#if defined(__GNUC__)
+#define _tmainCRTStartup mainCRTStartup
+#else
+#define _tmainCRTStartup MANGLE_w(mainCRTStartup)
+#endif // __GNUC__
+#endif // _tmainCRTStartup
+#if !defined(_tmain)
+#define _tmain MANGLE_w(main)
+#endif // _tmain
+#if !defined(GetCommandLine)
+#define GetCommandLine MANGLE_AW(GetCommandLine)
+#endif // GetCommandLine
 
-#ifdef NODEFAULTLIBS
-#ifdef __GNUC__
+
+#if defined(NOSTDLIB)
+#if defined(__GNUC__)
 // reference implementation of _alloca() etc.
 #if defined(__amd64__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk\n"
     "___chkstk_ms:pushq %rcx\n"
     "pushq %rax\n"
     "cmpq $0x1000, %rax\n"
@@ -132,11 +132,11 @@ __asm__(
     "movq %rsp, %rax\n"
     "movq %r10, %rsp\n"
     "pushq %r11\n"
-    "___main:ret\n"
+    "ret\n"
 );
 #elif defined(__i386__)
 __asm__(
-    ".global ___chkstk_ms, __alloca, ___chkstk, ___main\n"
+    ".global ___chkstk_ms, __alloca, ___chkstk\n"
     "___chkstk_ms:pushl %ecx\n"
     "pushl %eax\n"
     "cmpl $0x1000, %eax\n"
@@ -168,14 +168,14 @@ __asm__(
     "movl %ecx, %esp\n"
     "movl (%eax), %ecx\n"
     "pushl 4(%eax)\n"
-    "___main:ret\n"
+    "ret\n"
 );
 #endif
 #endif // __GNUC__
-#endif // NODEFAULTLIBS
+#endif // NOSTDLIB
 
 
-#if (ARGV_type == ARGV_own)
+#if (ARGV_type == ARGV_builtin)
 typedef struct {
     int argc;       // inout; if argc <= 0 then argv[] and pchBuf[] are unused
     _TCHAR** argv;  // pointers to arguments
@@ -236,13 +236,13 @@ static void parse_args(const _TCHAR* pszCmdLine, ARGS* pArgs)
     pArgs->argc = argc;
     pArgs->cchBuf = cchBuf;
 }
-#endif // ARGV_own
+#endif // ARGV_builtin
 
 
 __declspec(noreturn)
 void _tmainCRTStartup(void)
 {
-#if (ARGV_type == ARGV_own)
+#if (ARGV_type == ARGV_builtin)
     // get command line
     _TCHAR* pszCmdLine = GetCommandLine();
 
@@ -267,24 +267,23 @@ void _tmainCRTStartup(void)
     args.argv[args.argc] = NULL;
 
     // invoke main and exit
-    ExitProcess(_tmain(args.argc, args.argv, &(_TCHAR*){NULL}));
+    ExitProcess(_tmain(args.argc, args.argv));
 
 #elif (ARGV_type == ARGV_msvcrt)
     int argc;
     _TCHAR** argv;
     _TCHAR** envp;
 
-    __set_app_type(1); // _CONSOLE_APP
     _tgetmainargs(&argc, &argv, &envp, 0, &(_startupinfo){0});
-    ExitProcess(_tmain(argc, argv, envp));
+    ExitProcess(_tmain(argc, argv));
 
 #elif (ARGV_type == ARGV_shell32)
-#ifndef _UNICODE
+#if !defined(_UNICODE)
 #error -DARGV=shell32 requires -D_UNICODE.
 #endif // _UNICODE
     int argc;
-    _TCHAR** argv = CommandLineToArgv(GetCommandLine(), &argc);
-    ExitProcess(_tmain(argc, argv, &(_TCHAR*){NULL}));
+    _TCHAR** argv = CommandLineToArgvW(GetCommandLine(), &argc);
+    ExitProcess(_tmain(argc, argv));
 
 #elif (ARGV_type == ARGV_none)
     ExitProcess(_tmain());
@@ -293,3 +292,14 @@ void _tmainCRTStartup(void)
 #error Unknown ARGV_type.
 #endif // ARGV_type
 }
+
+
+#if defined(__GNUC__)
+void __main(void) {}
+#else
+#if (ARGV_type == ARGV_msvcrt)
+#pragma comment(lib, "msvcrt.lib")
+#elif (ARGV_type == ARGV_shell32)
+#pragma comment(lib, "shell32.lib")
+#endif // ARGV_type
+#endif // __GNUC__
