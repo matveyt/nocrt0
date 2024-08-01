@@ -29,13 +29,20 @@
 //
 // external function prototypes
 //
-extern int __stdcall WinMain(void*, void*, char*, int);
-extern int __stdcall wWinMain(void*, void*, wchar_t*, int);
+#if defined(STRICT)
+#define _hinstance HINSTANCE
+#define _hmodule HMODULE
+#else
+#define _hinstance void*
+#define _hmodule void*
+#endif // STRICT
+extern int __stdcall WinMain(_hinstance, _hinstance, char*, int);
+extern int __stdcall wWinMain(_hinstance, _hinstance, wchar_t*, int);
 __declspec(dllimport) __declspec(noreturn) void __stdcall ExitProcess(unsigned);
 __declspec(dllimport) char* __stdcall GetCommandLineA(void);
 __declspec(dllimport) wchar_t* __stdcall GetCommandLineW(void);
-__declspec(dllimport) void* __stdcall GetModuleHandleA(char*);
-__declspec(dllimport) void* __stdcall GetModuleHandleW(wchar_t*);
+__declspec(dllimport) _hmodule __stdcall GetModuleHandleA(const char*);
+__declspec(dllimport) _hmodule __stdcall GetModuleHandleW(const wchar_t*);
 
 #if defined(_UNICODE)
 #define MANGLE_w(name) w##name
