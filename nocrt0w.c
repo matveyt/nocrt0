@@ -14,10 +14,6 @@
 **/
 
 
-#if __STDC_VERSION__ < 199901L && !defined(__POCC__)
-#error C99 compiler required.
-#endif
-
 #if defined(UNICODE) && !defined(_UNICODE)
 #define _UNICODE
 #endif // UNICODE
@@ -46,16 +42,22 @@ __declspec(dllimport) _hmodule __stdcall GetModuleHandleW(const wchar_t*);
 
 #if defined(_UNICODE)
 #define MANGLE_w(name) w##name
+#define MANGLE_uw(name) _##w##name
 #define MANGLE_uuw(name) __##w##name
 #define MANGLE_AW(name) name##W
 #else
 #define MANGLE_w(name) name
+#define MANGLE_uw(name) _##name
 #define MANGLE_uuw(name) __##name
 #define MANGLE_AW(name) name##A
 #endif // _UNICODE
 
 #if !defined(_tWinMainCRTStartup)
+#if defined(__TINYC__)
+#define _tWinMainSRTStartup MANGLE_uw(winstart)
+#else
 #define _tWinMainCRTStartup MANGLE_w(WinMainCRTStartup)
+#endif // __TINYC__
 #endif // _tWinMainCRTStartup
 #if !defined(_tWinMain)
 #define _tWinMain MANGLE_w(WinMain)

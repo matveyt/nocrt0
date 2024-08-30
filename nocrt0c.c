@@ -19,15 +19,11 @@
 **/
 
 
-#if __STDC_VERSION__ < 199901L && !defined(__POCC__)
-#error C99 compiler required.
-#endif
-
 #if defined(UNICODE) && !defined(_UNICODE)
 #define _UNICODE
 #endif // UNICODE
 
-#include <stddef.h>
+#include <stdlib.h>
 #include <tchar.h>
 
 
@@ -58,7 +54,7 @@ extern int __cdecl wmain(int, wchar_t**);
 extern int __cdecl main(void);
 extern int __cdecl wmain(void);
 #endif // ARGV_none
-typedef struct { int newmode; } _startupinfo;
+typedef struct {int newmode;} _startupinfo;
 __declspec(dllimport) int __cdecl __getmainargs(int*, char***, char***, int,
     _startupinfo*);
 __declspec(dllimport) int __cdecl __wgetmainargs(int*, wchar_t***, wchar_t***, int,
@@ -70,10 +66,12 @@ __declspec(dllimport) wchar_t** __stdcall CommandLineToArgvW(const wchar_t*, int
 
 #if defined(_UNICODE)
 #define MANGLE_w(name) w##name
+#define MANGLE_uw(name) _##w##name
 #define MANGLE_uuw(name) __##w##name
 #define MANGLE_AW(name) name##W
 #else
 #define MANGLE_w(name) name
+#define MANGLE_uw(name) _##name
 #define MANGLE_uuw(name) __##name
 #define MANGLE_AW(name) name##A
 #endif // _UNICODE
@@ -82,11 +80,13 @@ __declspec(dllimport) wchar_t** __stdcall CommandLineToArgvW(const wchar_t*, int
 #define _tgetmainargs MANGLE_uuw(getmainargs)
 #endif // _tgetmainargs
 #if !defined(_tmainCRTStartup)
-#if defined(__GNUC__)
+#if defined(__TINYC__)
+#define _tmainCRTStartup MANGLE_uw(start)
+#elif defined(__GNUC__)
 #define _tmainCRTStartup mainCRTStartup
 #else
 #define _tmainCRTStartup MANGLE_w(mainCRTStartup)
-#endif // __GNUC__
+#endif // __TINYC__
 #endif // _tmainCRTStartup
 #if !defined(_tmain)
 #define _tmain MANGLE_w(main)
@@ -254,9 +254,9 @@ void _tmainCRTStartup(void)
     //assert(args.argc > 0);
     //assert(args.cchBuf > 0);
 
-    // reserve space (VLA)
-    _TCHAR* ptr_buf[args.argc + 1];
-    _TCHAR char_buf[args.cchBuf];
+    // reserve space
+    _TCHAR** ptr_buf = _alloca((args.argc + 1) * sizeof(_TCHAR*));
+    _TCHAR* char_buf = _alloca(args.cchBuf * sizeof(_TCHAR));
 
     // get args
     args.argv = ptr_buf;
