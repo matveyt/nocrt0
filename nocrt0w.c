@@ -159,4 +159,5 @@ void _tWinMainCRTStartup(void)
 
 #if defined(__GNUC__)
 void __main(void) {}
+int atexit(void (*func)(void)) { (void)func; return -1; }
 #endif // __GNUC__

@@ -11,7 +11,7 @@ Description
 
 *Nocrt0* is a custom C startup code without any dependencies of the standard C runtime
 libraries. It is intended for building very small executable files under OS Windows(R).
-*Nocrt0* was successfully tested with *GCC/MinGW* and *Pelles C*.
+*Nocrt0* was successfully tested with *GCC/MinGW*, *Pelles C* and *TinyCC*.
 
 Using nocrt0
 ------------

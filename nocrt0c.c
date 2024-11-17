@@ -296,6 +296,7 @@ void _tmainCRTStartup(void)
 
 #if defined(__GNUC__)
 void __main(void) {}
+int atexit(void (*func)(void)) { (void)func; return -1; }
 #else
 #if (ARGV_type == ARGV_msvcrt)
 #pragma comment(lib, "msvcrt.lib")
